@@ -78,33 +78,48 @@ const POS = {
   red:  { srv:0.70, prt:0.86, rcv:0.65, rprt:0.82 },
 };
 
-function computePos(sides, servingTeam, servingScore, isDoubles, players) {
+function computePos(sides, servingTeam, servingScore, isDoubles, players, swapped=false) {
   const recvTeam = servingTeam==="blue"?"red":"blue";
   const sBox = servingScore%2===0?"R":"L";
   const pBox=sBox==="R"?"L":"R", rBox=sBox, rpBox=rBox==="R"?"L":"R";
 
-  if (!isDoubles) return {
-    blue:[{x:POS.blue[servingTeam==="blue"?"srv":"rcv"],
-           y:boxY("blue",servingTeam==="blue"?sBox:rBox),
-           role:servingTeam==="blue"?"server":"receiver",name:players.blue[0]}],
-    red: [{x:POS.red[servingTeam==="red"?"srv":"rcv"],
-           y:boxY("red",servingTeam==="red"?sBox:rBox),
-           role:servingTeam==="red"?"server":"receiver",name:players.red[0]}],
+  // boxY but aware of swap: when swapped, Blue is on right (faces LEFT like Red normally does)
+  // so R/L box y-positions are flipped for each team
+  const boxYS = (team, box) => {
+    const effectiveTeam = swapped ? (team==="blue"?"red":"blue") : team;
+    return effectiveTeam==="blue" ? (box==="R"?0.72:0.28) : (box==="R"?0.28:0.72);
   };
 
-  const ss=sides[servingTeam],rs=sides[recvTeam];
-  const si=ss[0]===sBox?0:1,pi=1-si,ri=rs[0]===rBox?0:1,rpi=1-ri;
-  const res={blue:[null,null],red:[null,null]};
-  if (servingTeam==="blue") {
-    res.blue[si]={x:POS.blue.srv,y:boxY("blue",sBox),role:"server",  name:players.blue[si]};
-    res.blue[pi]={x:POS.blue.prt,y:boxY("blue",pBox),role:"partner", name:players.blue[pi]};
-    res.red[ri] ={x:POS.red.rcv, y:boxY("red", rBox),role:"receiver",name:players.red[ri] };
-    res.red[rpi]={x:POS.red.rprt,y:boxY("red", rpBox),role:"rpartner",name:players.red[rpi]};
+  // x positions: when swapped Blue uses Red's x range and vice versa
+  const blueOnLeft = !swapped;
+  const bPOS = blueOnLeft ? POS.blue : {srv:POS.red.srv,prt:POS.red.prt,rcv:POS.red.rcv,rprt:POS.red.rprt};
+  const rPOS = blueOnLeft ? POS.red  : {srv:POS.blue.srv,prt:POS.blue.prt,rcv:POS.blue.rcv,rprt:POS.blue.rprt};
+
+  let res;
+  if (!isDoubles) {
+    res = {
+      blue:[{x:bPOS[servingTeam==="blue"?"srv":"rcv"],
+             y:boxYS("blue",servingTeam==="blue"?sBox:rBox),
+             role:servingTeam==="blue"?"server":"receiver",name:players.blue[0]}],
+      red: [{x:rPOS[servingTeam==="red"?"srv":"rcv"],
+             y:boxYS("red",servingTeam==="red"?sBox:rBox),
+             role:servingTeam==="red"?"server":"receiver",name:players.red[0]}],
+    };
   } else {
-    res.red[si] ={x:POS.red.srv, y:boxY("red", sBox),role:"server",  name:players.red[si] };
-    res.red[pi] ={x:POS.red.prt, y:boxY("red", pBox),role:"partner", name:players.red[pi] };
-    res.blue[ri]={x:POS.blue.rcv,y:boxY("blue",rBox),role:"receiver",name:players.blue[ri]};
-    res.blue[rpi]={x:POS.blue.rprt,y:boxY("blue",rpBox),role:"rpartner",name:players.blue[rpi]};
+    const ss=sides[servingTeam],rs=sides[recvTeam];
+    const si=ss[0]===sBox?0:1,pi=1-si,ri=rs[0]===rBox?0:1,rpi=1-ri;
+    res={blue:[null,null],red:[null,null]};
+    if (servingTeam==="blue") {
+      res.blue[si]={x:bPOS.srv, y:boxYS("blue",sBox), role:"server",   name:players.blue[si]};
+      res.blue[pi]={x:bPOS.prt, y:boxYS("blue",pBox), role:"partner",  name:players.blue[pi]};
+      res.red[ri] ={x:rPOS.rcv, y:boxYS("red", rBox), role:"receiver", name:players.red[ri] };
+      res.red[rpi]={x:rPOS.rprt,y:boxYS("red", rpBox),role:"rpartner", name:players.red[rpi]};
+    } else {
+      res.red[si] ={x:rPOS.srv, y:boxYS("red", sBox), role:"server",   name:players.red[si] };
+      res.red[pi] ={x:rPOS.prt, y:boxYS("red", pBox), role:"partner",  name:players.red[pi] };
+      res.blue[ri]={x:bPOS.rcv, y:boxYS("blue",rBox), role:"receiver", name:players.blue[ri]};
+      res.blue[rpi]={x:bPOS.rprt,y:boxYS("blue",rpBox),role:"rpartner",name:players.blue[rpi]};
+    }
   }
   return res;
 }
@@ -174,9 +189,11 @@ function CourtSVG({ servingTeam, serveBox, positions, players, isDoubles, swappe
     const onLeft=swapped?team==="red":team==="blue";
     const nearNet=onLeft?sslBx:sslRx;
     const back=onLeft?(isDoubles?dblBx:mL):(isDoubles?dblRx:mL+cW);
+    // When swapped, facing direction flips → R/L box top/bottom swaps too
+    const effectiveTeam = swapped ? (team==="blue"?"red":"blue") : team;
     let y1,y2;
-    if(team==="blue"){y1=box==="R"?centY:mT;y2=box==="R"?mT+cH:centY;}
-    else             {y1=box==="R"?mT:centY;y2=box==="R"?centY:mT+cH;}
+    if(effectiveTeam==="blue"){y1=box==="R"?centY:mT;y2=box==="R"?mT+cH:centY;}
+    else                      {y1=box==="R"?mT:centY;y2=box==="R"?centY:mT+cH;}
     if(!isDoubles){y1=Math.max(y1,sngT);y2=Math.min(y2,sngB);}
     return {x:Math.min(nearNet,back),y:y1,w:Math.abs(nearNet-back),h:y2-y1};
   }
@@ -185,7 +202,7 @@ function CourtSVG({ servingTeam, serveBox, positions, players, isDoubles, swappe
   const ax1=srvR.x+srvR.w/2,ay1=srvR.y+srvR.h/2;
   const ax2=landR.x+landR.w/2,ay2=landR.y+landR.h/2;
   const lT=swapped?"red":"blue", rT=swapped?"blue":"red";
-  const toSVG=(xf,yf)=>({sx:mL+(swapped?1-xf:xf)*cW,sy:mT+yf*cH});
+  const toSVG=(xf,yf)=>({sx:mL+xf*cW,sy:mT+yf*cH});
 
   const all=[];
   ["blue","red"].forEach(t=>(positions[t]||[]).forEach((p,i)=>{
@@ -240,9 +257,11 @@ function CourtSVG({ servingTeam, serveBox, positions, players, isDoubles, swappe
       <rect x={netX-3} y={mT-4} width={6} height={cH+8} fill={lC+"08"} rx="3"/>
       <line x1={netX} y1={mT-4} x2={netX} y2={mT+cH+4} stroke={lC+"cc"} strokeWidth="3"/>
 
-      {/* L/R labels */}
-      {[{x:sslBx-14,y:centY-16,l:"L",t:lT},{x:sslBx-14,y:centY+22,l:"R",t:lT},
-        {x:sslRx+14,y:centY-16,l:"R",t:rT},{x:sslRx+14,y:centY+22,l:"L",t:rT}]
+      {/* L/R labels — fixed positions, never change regardless of swap */}
+      {[{x:sslBx-14,y:centY-16,l:"L",t:"blue"},
+        {x:sslBx-14,y:centY+22,l:"R",t:"blue"},
+        {x:sslRx+14,y:centY-16,l:"R",t:"red"},
+        {x:sslRx+14,y:centY+22,l:"L",t:"red"}]
         .map(({x,y,l,t},i)=>(
           <text key={i} x={x} y={y} textAnchor="middle" fontSize="10"
             fill={C[t].light+"66"} fontFamily="Chakra Petch,sans-serif" fontWeight="700">{l}</text>
@@ -490,7 +509,7 @@ function GameScreen({ config, onReset, T, theme, toggleTheme }) {
   const[swapAnim,setSwapAnim]=useState(false);
 
   const serveBox=scores[servingTeam]%2===0?"R":"L";
-  const positions=computePos(sides,servingTeam,scores[servingTeam],isDoubles,players);
+  const positions=computePos(sides,servingTeam,scores[servingTeam],isDoubles,players,swapped);
   const srvIdx=isDoubles?(sides[servingTeam][0]===serveBox?0:1):0;
   const serverName=players[servingTeam][srvIdx];
 
